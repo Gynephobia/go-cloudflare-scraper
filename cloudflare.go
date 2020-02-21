@@ -23,6 +23,18 @@ type Transport struct {
 	cookies  http.CookieJar
 }
 
+func NewClient() (c *http.Client, err error) {
+        scraper_transport, err := NewTransport(http.DefaultTransport)
+	if err != nil {
+		return
+	}
+	c = &http.Client{
+		Transport: scraper_transport,
+		Jar:       scraper_transport.cookies,
+	}
+	return
+}
+
 func NewTransport(upstream http.RoundTripper) (*Transport, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -35,6 +47,9 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if r.Header.Get("User-Agent") == "" {
 		r.Header.Set("User-Agent", userAgent)
 	}
+	if r.Header.Get("Referer") == "" {
+		r.Header.Set("Referer", r.URL.String())
+	}
 
 	resp, err := t.upstream.RoundTrip(r)
 	if err != nil {
@@ -42,7 +57,8 @@ func (t Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 
 	// Check if Cloudflare anti-bot is on
-	if resp.StatusCode == 503 && resp.Header.Get("Server") == "cloudflare-nginx" {
+	server_header := resp.Header.Get("Server")
+	if resp.StatusCode == 503 && (server_header == "cloudflare-nginx" || server_header == "cloudflare") {
 		log.Printf("Solving challenge for %s", resp.Request.URL.Hostname())
 		resp, err := t.solveChallenge(resp)
 
